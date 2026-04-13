@@ -6,6 +6,7 @@ import json
 
 st.set_page_config(layout="wide")
 
+# ---------- API ----------
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ---------- UI ----------
@@ -21,20 +22,19 @@ body {background:#f4f6fb;}
 
 .card {
     background:#ffffff;
-    padding:12px;
+    padding:10px;
     border-radius:10px;
-    box-shadow:0 3px 8px rgba(0,0,0,0.06);
+    box-shadow:0 2px 6px rgba(0,0,0,0.06);
     margin-bottom:10px;
 }
 
 .section-title {
-    font-size:16px;
+    font-size:15px;
     font-weight:800;
 }
 
 .small-text {
     font-size:13px;
-    margin-bottom:4px;
 }
 
 .red {color:#dc2626; font-weight:700;}
@@ -52,7 +52,6 @@ st.markdown('<div class="title">🚀 Resume Analyzer AI PRO</div>', unsafe_allow
 
 file = st.file_uploader("Upload Resume", type=["pdf","docx"])
 job_role = st.text_input("💼 Applying for positions (e.g. CSR, Sales Manager)")
-
 analyze_btn = st.button("🔍 Analyze Resume")
 
 # ---------- EXTRACT ----------
@@ -75,27 +74,28 @@ def get_color(score):
 # ---------- AI ANALYSIS ----------
 def analyze_resume(text, role):
     prompt = f"""
-You are an expert ATS resume evaluator.
+You are a strict JSON generator.
 
-Evaluate this resume for the role: {role}
+Analyze this resume for role: {role}
 
 Return ONLY JSON.
 
+Format:
 {{
-"profile": {{"score": 80, "reason": "...", "fix": "..."}},
-"experience": {{"score": 75, "reason": "...", "fix": "..."}},
-"education": {{"score": 70, "reason": "...", "fix": "..."}},
-"skills": {{"score": 85, "reason": "...", "fix": "..."}},
-"achievements": {{"score": 60, "reason": "...", "fix": "..."}},
-"languages": {{"score": 90, "reason": "...", "fix": "..."}},
-"hobbies": {{"score": 80, "reason": "...", "fix": "..."}},
-"contact": {{"score": 95, "reason": "...", "fix": "..."}}
+"profile": {{"score": 0-100, "reason": "text", "fix": "text"}},
+"experience": {{"score": 0-100, "reason": "text", "fix": "text"}},
+"education": {{"score": 0-100, "reason": "text", "fix": "text"}},
+"skills": {{"score": 0-100, "reason": "text", "fix": "text"}},
+"achievements": {{"score": 0-100, "reason": "text", "fix": "text"}},
+"languages": {{"score": 0-100, "reason": "text", "fix": "text"}},
+"hobbies": {{"score": 0-100, "reason": "text", "fix": "text"}},
+"contact": {{"score": 0-100, "reason": "text", "fix": "text"}}
 }}
 
 Rules:
-- Score based on relevance to job role
-- Reason must be specific (NOT generic)
-- Fix must be actionable
+- Score based on job relevance
+- Give different scores per section
+- No explanation outside JSON
 
 Resume:
 {text}
@@ -104,34 +104,35 @@ Resume:
     try:
         res = client.chat.completions.create(
             model="gpt-4.1-mini",
-            messages=[{"role":"user","content":prompt}],
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
 
-        content = res.choices[0].message.content.strip()
+        raw = res.choices[0].message.content.strip()
 
-        if "```" in content:
-            content = content.split("```")[1]
+        # 🔥 CLEAN RESPONSE
+        raw = raw.replace("```json", "").replace("```", "").strip()
 
-        return json.loads(content)
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        json_str = raw[start:end]
 
-    except:
-        return {
-            k: {"score": 70, "reason": "Parsing issue", "fix": "Retry"}
-            for k in ["profile","experience","education","skills","achievements","languages","hobbies","contact"]
-        }
+        return json.loads(json_str)
+
+    except Exception as e:
+        st.error(f"AI Error: {e}")
+        return None
 
 # ---------- FINAL RESUME ----------
 def generate_resume(text, role):
     prompt = f"""
-Rewrite this resume professionally for the role: {role}
+Rewrite this resume professionally for role: {role}
 
-Requirements:
-- Strong ATS keywords for this role
+- Use strong ATS keywords
 - Clear sections
 - Bullet points
-- Impact-driven language
-- Keep original data (no fake info)
+- Keep original data
+- Improve wording
 
 Resume:
 {text}
@@ -148,6 +149,10 @@ if file and job_role and analyze_btn:
     text = extract_text(file)
 
     data = analyze_resume(text, job_role)
+
+    if not data:
+        st.error("⚠️ AI failed. Check API key or try again.")
+        st.stop()
 
     scores = [data[s]["score"] for s in data]
     overall = int(sum(scores)/len(scores))
@@ -170,7 +175,10 @@ if file and job_role and analyze_btn:
         with cols[i % 2]:
             st.markdown('<div class="card">', unsafe_allow_html=True)
 
-            st.markdown(f'<div class="section-title">{sec.upper()} — <span class="{color}">{d["score"]}</span></div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="section-title">{sec.upper()} — <span class="{color}">{d["score"]}</span></div>',
+                unsafe_allow_html=True
+            )
 
             st.markdown(f'<div class="small-text">❌ {d["reason"]}</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="small-text">💡 {d["fix"]}</div>', unsafe_allow_html=True)
