@@ -2,147 +2,128 @@ import streamlit as st
 import pdfplumber
 import docx
 import re
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib.pagesizes import A4
+import pandas as pd
+import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
-st.title("🚀 Smart Resume Analyzer (Professional Version)")
 
-# ---------------- FILE UPLOAD ----------------
-uploaded_file = st.file_uploader("Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
+# ---------- CUSTOM CSS ----------
+st.markdown("""
+<style>
+body {
+    background-color: #0f172a;
+    color: white;
+}
+.big-title {
+    font-size: 40px;
+    font-weight: bold;
+    text-align: center;
+    background: linear-gradient(to right, #6366f1, #9333ea);
+    -webkit-background-clip: text;
+    color: transparent;
+}
+.card {
+    padding: 20px;
+    border-radius: 15px;
+    background: #1e293b;
+    box-shadow: 0px 0px 10px rgba(0,0,0,0.3);
+    margin-bottom: 15px;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# ---------------- TEXT EXTRACTION ----------------
+st.markdown('<div class="big-title">🚀 Resume Analyzer Pro</div>', unsafe_allow_html=True)
+st.write("### Upload your resume and get deep insights")
+
+uploaded_file = st.file_uploader("Upload Resume", type=["pdf", "docx"])
+
+# ---------- TEXT EXTRACTION ----------
 def extract_text(file):
     text = ""
-
     if file.type == "application/pdf":
         with pdfplumber.open(file) as pdf:
             for page in pdf.pages:
                 text += page.extract_text() or ""
-
-    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+    else:
         doc = docx.Document(file)
         for para in doc.paragraphs:
             text += para.text + "\n"
+    return text.lower()
 
-    return text
+# ---------- SCORING ----------
+def score_resume(text):
+    edu = 7 if "college" in text else 4
+    exp = 8 if "experience" in text else 5
+    ach = 6 if re.search(r"\d+", text) else 3
+    skills = 7 if "skills" in text else 4
+    fmt = 6
+    lang = 6
 
-# ---------------- SCORE ----------------
-def calculate_score(text):
-    score = 40
-    issues = []
-
-    if len(text.split()) > 200:
-        score += 15
-    else:
-        issues.append("Resume is too short")
-
-    if re.search(r"\d+", text):
-        score += 10
-    else:
-        issues.append("Add measurable achievements (numbers)")
-
-    weak_words = re.findall(r"\b(responsible|handled|worked|helped)\b", text.lower())
-    if len(weak_words) > 5:
-        score -= 10
-        issues.append("Too many weak action words")
-
-    if "experience" not in text.lower():
-        issues.append("Missing experience section")
-
-    return max(min(score, 85), 30), issues  # realistic cap
-
-# ---------------- LINE IMPROVEMENT ----------------
-def suggest_improvement(line):
-    replacements = {
-        "responsible for": "led and executed",
-        "handled": "managed efficiently",
-        "worked on": "developed and delivered",
-        "helped": "contributed to"
+    return {
+        "Education": edu,
+        "Experience": exp,
+        "Achievements": ach,
+        "Skills": skills,
+        "Formatting": fmt,
+        "Language": lang
     }
 
-    improved = line
-    for k, v in replacements.items():
-        improved = re.sub(k, v, improved, flags=re.IGNORECASE)
-
-    return improved
-
-# ---------------- HIGHLIGHT ----------------
-def highlight_line(line):
-    if re.search(r"\d+|\b(managed|led|developed|improved)\b", line.lower()):
-        return f"<b>{line}</b>"
-    return line
-
-# ---------------- PDF ----------------
-def create_pdf(lines):
-    doc = SimpleDocTemplate("resume.pdf", pagesize=A4)
-    styles = getSampleStyleSheet()
-    elements = []
-
-    for line in lines:
-        elements.append(Paragraph(line, styles["Normal"]))
-        elements.append(Spacer(1, 8))
-
-    doc.build(elements)
-
-    with open("resume.pdf", "rb") as f:
-        return f.read()
-
-# ---------------- MAIN ----------------
+# ---------- MAIN ----------
 if uploaded_file:
     text = extract_text(uploaded_file)
 
-    if text:
-        st.subheader("📊 Resume Score")
-        score, issues = calculate_score(text)
+    scores = score_resume(text)
 
-        st.progress(score)
-        st.write(f"Score: **{score}/100**")
+    total = sum(scores.values())
+    percent = int((total / 60) * 100)
 
-        st.subheader("⚠️ Issues Found")
-        for i in issues:
-            st.write(f"• {i}")
+    # ---------- SCORE CARD ----------
+    col1, col2 = st.columns(2)
 
-        st.subheader("🧠 Smart Improvements (Choose what to fix)")
+    with col1:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("📊 Overall Score")
+        st.progress(percent)
+        st.write(f"### {percent}/100")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        lines = text.split("\n")
-        improved_lines = []
+    with col2:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.subheader("⚠️ Key Insight")
+        if percent < 60:
+            st.write("Your resume needs strong improvement")
+        elif percent < 80:
+            st.write("Good resume, but can be improved")
+        else:
+            st.write("Strong resume 👍")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        for i, line in enumerate(lines):
-            if len(line.strip()) > 20:
+    # ---------- SECTION CARDS ----------
+    st.subheader("📈 Section Analysis")
 
-                suggestion = suggest_improvement(line)
+    cols = st.columns(3)
+    for i, (k, v) in enumerate(scores.items()):
+        with cols[i % 3]:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.write(f"### {k}")
+            st.progress(v * 10)
+            st.write(f"{v}/10")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-                if suggestion != line:
-                    st.write(f"**Original:** {line}")
-                    st.write(f"👉 Suggested: {suggestion}")
+    # ---------- RADAR CHART ----------
+    st.subheader("📊 Performance Graph")
 
-                    apply_fix = st.checkbox(f"Apply fix for line {i}")
+    labels = list(scores.keys())
+    values = list(scores.values())
 
-                    if apply_fix:
-                        improved_lines.append(suggestion)
-                    else:
-                        improved_lines.append(line)
-                else:
-                    improved_lines.append(line)
-            else:
-                improved_lines.append(line)
+    values += values[:1]
+    labels += labels[:1]
 
-        st.subheader("✨ Final Resume Preview")
+    fig, ax = plt.subplots()
+    ax.plot(values)
+    ax.fill(values, alpha=0.3)
 
-        highlighted = [highlight_line(l) for l in improved_lines]
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels)
 
-        st.markdown("<br>".join(highlighted), unsafe_allow_html=True)
-
-        pdf = create_pdf(highlighted)
-
-        st.download_button(
-            "📥 Download Professional Resume PDF",
-            pdf,
-            file_name="final_resume.pdf",
-            mime="application/pdf"
-        )
-
-    else:
-        st.error("Could not extract text from file.")
+    st.pyplot(fig)
