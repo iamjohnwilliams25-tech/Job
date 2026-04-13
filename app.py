@@ -6,27 +6,37 @@ from openai import OpenAI
 
 st.set_page_config(layout="wide")
 
-# ---------- OPENAI ----------
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ---------- UI ----------
 st.markdown("""
 <style>
 body {background:#f4f6fb;}
-.title {text-align:center;font-size:34px;font-weight:700;}
-.name {text-align:center;font-size:26px;font-weight:600;margin-top:10px;}
+
+.title {
+    text-align:center;
+    font-size:36px;
+    font-weight:800;
+}
+
+.name {
+    text-align:center;
+    font-size:24px;
+    font-weight:600;
+    margin-bottom:20px;
+}
+
 .card {
     background:white;
     padding:15px;
-    border-radius:10px;
-    box-shadow:0 4px 10px rgba(0,0,0,0.05);
+    border-radius:12px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.06);
     margin-bottom:10px;
 }
-.section-title {
-    font-size:20px;
-    font-weight:700;
-    margin-top:20px;
-}
+
+.red {color:#dc2626; font-weight:700;}
+.green {color:#16a34a; font-weight:700;}
+.amber {color:#d97706; font-weight:700;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -47,67 +57,72 @@ def extract_text(file):
             text += para.text + "\n"
     return text
 
-# ---------- NAME DETECTION ----------
+# ---------- NAME ----------
 def get_name(text):
-    lines = text.split("\n")
-    for line in lines[:5]:
-        if len(line.strip()) > 3 and len(line.split()) <= 4:
+    for line in text.split("\n")[:5]:
+        if len(line.split()) <= 4 and len(line.strip()) > 3:
             return line.strip()
     return "Candidate"
 
+# ---------- SECTION DETECTION ----------
+def detect_sections(text):
+    sections = {
+        "Profile": "",
+        "Experience": "",
+        "Education": "",
+        "Skills": "",
+        "Achievements": "",
+        "Languages": "",
+        "Hobbies": "",
+        "Contact": ""
+    }
+
+    current = "Profile"
+
+    for line in text.split("\n"):
+        l = line.lower()
+
+        if "experience" in l:
+            current = "Experience"
+        elif "education" in l:
+            current = "Education"
+        elif "skill" in l:
+            current = "Skills"
+        elif "achievement" in l:
+            current = "Achievements"
+        elif "language" in l:
+            current = "Languages"
+        elif "hobbies" in l or "interest" in l:
+            current = "Hobbies"
+        elif "phone" in l or "email" in l or "address" in l:
+            current = "Contact"
+
+        sections[current] += line + "\n"
+
+    return sections
+
 # ---------- SCORING ----------
-def analyze(text):
-    text_lower = text.lower()
+def score_section(text):
+    score = 60
 
-    scores = {}
-    reasons = {}
-    suggestions = {}
+    if len(text.strip()) > 50:
+        score += 10
+    if re.search(r"\d+%|\d+", text):
+        score += 10
+    if re.search(r"\b(managed|led|developed)\b", text.lower()):
+        score += 10
 
-    # EXPERIENCE
-    score = 6
-    reason = []
-    sug = []
+    return min(score, 100)
 
-    if not re.search(r"\b(managed|led|developed)\b", text_lower):
-        score -= 2
-        reason.append("Weak action words")
-        sug.append("Use strong verbs like managed, led, developed")
+def get_color(score):
+    if score < 90:
+        return "red"
+    elif score == 100:
+        return "green"
+    else:
+        return "amber"
 
-    scores["Experience"] = score
-    reasons["Experience"] = reason
-    suggestions["Experience"] = sug
-
-    # SKILLS
-    score = 7
-    reason = []
-    sug = []
-
-    if "skills" not in text_lower:
-        score -= 2
-        reason.append("Skills section missing")
-        sug.append("Add a proper skills section")
-
-    scores["Skills"] = score
-    reasons["Skills"] = reason
-    suggestions["Skills"] = sug
-
-    # ACHIEVEMENTS
-    score = 6
-    reason = []
-    sug = []
-
-    if not re.search(r"\d+%|\d+", text_lower):
-        score -= 2
-        reason.append("No measurable results")
-        sug.append("Add numbers like 20%, 30% impact")
-
-    scores["Achievements"] = score
-    reasons["Achievements"] = reason
-    suggestions["Achievements"] = sug
-
-    return scores, reasons, suggestions
-
-# ---------- AI RESUME ----------
+# ---------- AI ----------
 def generate_resume(text):
     try:
         response = client.chat.completions.create(
@@ -116,12 +131,13 @@ def generate_resume(text):
                 {
                     "role": "system",
                     "content": """
-Rewrite this resume professionally:
-- Extract candidate name
-- Proper sections with bold headings
-- Bullet points
-- Strong corporate tone
-- Clean formatting
+Create a premium, CEO-level resume:
+- Extract candidate name properly
+- Use bold headings
+- Use bullet points
+- Keep clean spacing
+- Maintain professional tone
+- Do NOT invent fake data
 """
                 },
                 {"role": "user", "content": text}
@@ -139,37 +155,35 @@ if uploaded_file:
 
     st.markdown(f'<div class="name">{name}</div>', unsafe_allow_html=True)
 
-    scores, reasons, suggestions = analyze(text)
+    sections = detect_sections(text)
 
-    # ---------- SCORE DASHBOARD ----------
-    st.markdown("## 📊 Score Overview")
+    st.markdown("## 📊 Section Score Dashboard")
 
-    cols = st.columns(3)
+    cols = st.columns(4)
 
-    for i, (sec, val) in enumerate(scores.items()):
-        with cols[i]:
+    scores = []
+
+    for i, (sec, content) in enumerate(sections.items()):
+        score = score_section(content)
+        scores.append(score)
+        color = get_color(score)
+
+        with cols[i % 4]:
             st.markdown('<div class="card">', unsafe_allow_html=True)
             st.write(f"**{sec}**")
-            st.progress(val * 10)
-            st.write(f"{val}/10")
-
-            if reasons[sec]:
-                st.write("❌")
-                for r in reasons[sec]:
-                    st.write(f"- {r}")
-
-            if suggestions[sec]:
-                st.write("💡")
-                for s in suggestions[sec]:
-                    st.code(s)
-
+            st.markdown(f'<div class="{color}">{score}/100</div>', unsafe_allow_html=True)
+            st.progress(score)
             st.markdown('</div>', unsafe_allow_html=True)
 
-    total = int(sum(scores.values()) / len(scores) * 10)
-    st.success(f"Overall Score: {total}/100")
+    overall = int(sum(scores) / len(scores))
+
+    st.markdown("## 📈 Overall Score")
+    color = get_color(overall)
+    st.markdown(f'<div class="{color}">{overall}/100</div>', unsafe_allow_html=True)
+    st.progress(overall)
 
     # ---------- AI OUTPUT ----------
-    st.markdown("## ✨ Professional Resume")
+    st.markdown("## ✨ Premium Resume Output")
 
     improved = generate_resume(text)
 
