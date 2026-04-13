@@ -1,14 +1,18 @@
 import streamlit as st
 import pdfplumber
 import docx
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+import re
 
 st.set_page_config(layout="wide")
-st.title("🚀 AI Resume Analyzer")
+st.title("🚀 Professional Resume Analyzer & Builder")
 
 # ---------------- FILE UPLOAD ----------------
-uploaded_file = st.file_uploader("Upload your Resume (PDF or DOCX)", type=["pdf", "docx"])
+uploaded_file = st.file_uploader("Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
 
-# ---------------- EXTRACT TEXT ----------------
+# ---------------- TEXT EXTRACTION ----------------
 def extract_text(file):
     text = ""
 
@@ -24,62 +28,109 @@ def extract_text(file):
 
     return text
 
-# ---------------- ANALYSIS ----------------
-def analyze_resume(text):
-    score = 50
-    suggestions = []
+# ---------------- SMART SCORING ----------------
+def calculate_score(text):
+    score = 30
+    issues = []
 
-    if len(text) > 500:
+    word_count = len(text.split())
+
+    if word_count > 200:
         score += 20
     else:
-        suggestions.append("Add more content to your resume")
+        issues.append("Resume is too short")
 
     if "experience" in text.lower():
-        score += 10
+        score += 15
     else:
-        suggestions.append("Add experience section")
+        issues.append("Missing experience section")
 
     if "skills" in text.lower():
+        score += 15
+    else:
+        issues.append("Missing skills section")
+
+    if re.search(r"\d+", text):
         score += 10
     else:
-        suggestions.append("Add skills section")
+        issues.append("Add measurable achievements (numbers)")
 
-    if len(text.split()) > 150:
-        score += 10
-    else:
-        suggestions.append("Increase word count for better ATS performance")
+    if len(re.findall(r"\b(responsible|handled|worked)\b", text.lower())) > 5:
+        score -= 10
+        issues.append("Weak action words detected")
 
-    return min(score, 100), suggestions
+    return max(min(score, 95), 20), issues  # NEVER 100%
 
-# ---------------- UI ----------------
+# ---------------- IMPROVEMENT ----------------
+def improve_text(text):
+    replacements = {
+        "responsible for": "led and executed",
+        "worked on": "developed and delivered",
+        "handled": "managed efficiently"
+    }
+
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+
+    return text
+
+# ---------------- HIGHLIGHT IMPORTANT LINES ----------------
+def highlight_text(text):
+    lines = text.split("\n")
+    highlighted = []
+
+    for line in lines:
+        if re.search(r"\d+%|\d+", line):
+            highlighted.append(f"<b>{line}</b>")
+        else:
+            highlighted.append(line)
+
+    return "<br/>".join(highlighted)
+
+# ---------------- PDF GENERATION ----------------
+def create_pdf(content):
+    doc = SimpleDocTemplate("resume.pdf", pagesize=A4)
+    styles = getSampleStyleSheet()
+
+    elements = []
+
+    for line in content.split("<br/>"):
+        elements.append(Paragraph(line, styles["Normal"]))
+        elements.append(Spacer(1, 10))
+
+    doc.build(elements)
+
+    with open("resume.pdf", "rb") as f:
+        return f.read()
+
+# ---------------- MAIN ----------------
 if uploaded_file:
-
     text = extract_text(uploaded_file)
 
     if text:
-        st.subheader("📄 Extracted Resume")
-        st.text_area("Resume Content", text, height=200)
+        st.subheader("📊 Resume Score")
+        score, issues = calculate_score(text)
 
-        score, suggestions = analyze_resume(text)
-
-        st.subheader("📊 ATS Score")
         st.progress(score)
         st.write(f"Score: **{score}/100**")
 
-        st.subheader("⚠️ Suggestions")
-        for s in suggestions:
-            st.write(f"• {s}")
+        st.subheader("⚠️ Issues Found")
+        for i in issues:
+            st.write(f"• {i}")
 
-        st.subheader("✨ Improved Version (Basic)")
-        improved = text.replace("responsible for", "managed and executed")
+        st.subheader("✨ Improved Resume")
+        improved = improve_text(text)
 
-        st.text_area("Improved Resume", improved, height=200)
+        highlighted = highlight_text(improved)
+
+        st.markdown(highlighted, unsafe_allow_html=True)
+
+        # Generate PDF
+        pdf = create_pdf(highlighted)
 
         st.download_button(
-            "📥 Download Improved Resume",
-            improved,
-            file_name="improved_resume.txt"
+            "📥 Download Professional PDF Resume",
+            pdf,
+            file_name="professional_resume.pdf",
+            mime="application/pdf"
         )
-
-    else:
-        st.error("Could not extract text from file.")
