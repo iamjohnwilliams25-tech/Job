@@ -1,13 +1,13 @@
 import streamlit as st
 import pdfplumber
 import docx
+import re
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
-import re
 
 st.set_page_config(layout="wide")
-st.title("🚀 Professional Resume Analyzer & Builder")
+st.title("🚀 Smart Resume Analyzer (Professional Version)")
 
 # ---------------- FILE UPLOAD ----------------
 uploaded_file = st.file_uploader("Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
@@ -28,75 +28,61 @@ def extract_text(file):
 
     return text
 
-# ---------------- SMART SCORING ----------------
+# ---------------- SCORE ----------------
 def calculate_score(text):
-    score = 30
+    score = 40
     issues = []
 
-    word_count = len(text.split())
-
-    if word_count > 200:
-        score += 20
+    if len(text.split()) > 200:
+        score += 15
     else:
         issues.append("Resume is too short")
-
-    if "experience" in text.lower():
-        score += 15
-    else:
-        issues.append("Missing experience section")
-
-    if "skills" in text.lower():
-        score += 15
-    else:
-        issues.append("Missing skills section")
 
     if re.search(r"\d+", text):
         score += 10
     else:
         issues.append("Add measurable achievements (numbers)")
 
-    if len(re.findall(r"\b(responsible|handled|worked)\b", text.lower())) > 5:
+    weak_words = re.findall(r"\b(responsible|handled|worked|helped)\b", text.lower())
+    if len(weak_words) > 5:
         score -= 10
-        issues.append("Weak action words detected")
+        issues.append("Too many weak action words")
 
-    return max(min(score, 95), 20), issues  # NEVER 100%
+    if "experience" not in text.lower():
+        issues.append("Missing experience section")
 
-# ---------------- IMPROVEMENT ----------------
-def improve_text(text):
+    return max(min(score, 85), 30), issues  # realistic cap
+
+# ---------------- LINE IMPROVEMENT ----------------
+def suggest_improvement(line):
     replacements = {
         "responsible for": "led and executed",
+        "handled": "managed efficiently",
         "worked on": "developed and delivered",
-        "handled": "managed efficiently"
+        "helped": "contributed to"
     }
 
+    improved = line
     for k, v in replacements.items():
-        text = text.replace(k, v)
+        improved = re.sub(k, v, improved, flags=re.IGNORECASE)
 
-    return text
+    return improved
 
-# ---------------- HIGHLIGHT IMPORTANT LINES ----------------
-def highlight_text(text):
-    lines = text.split("\n")
-    highlighted = []
+# ---------------- HIGHLIGHT ----------------
+def highlight_line(line):
+    if re.search(r"\d+|\b(managed|led|developed|improved)\b", line.lower()):
+        return f"<b>{line}</b>"
+    return line
 
-    for line in lines:
-        if re.search(r"\d+%|\d+", line):
-            highlighted.append(f"<b>{line}</b>")
-        else:
-            highlighted.append(line)
-
-    return "<br/>".join(highlighted)
-
-# ---------------- PDF GENERATION ----------------
-def create_pdf(content):
+# ---------------- PDF ----------------
+def create_pdf(lines):
     doc = SimpleDocTemplate("resume.pdf", pagesize=A4)
     styles = getSampleStyleSheet()
-
     elements = []
 
-    for line in content.split("<br/>"):
+    for line in lines:
         elements.append(Paragraph(line, styles["Normal"]))
-        elements.append(Spacer(1, 10))
+        elements.append(Spacer(1, 8))
 
     doc.build(elements)
 
@@ -118,19 +104,45 @@ if uploaded_file:
         for i in issues:
             st.write(f"• {i}")
 
-        st.subheader("✨ Improved Resume")
-        improved = improve_text(text)
+        st.subheader("🧠 Smart Improvements (Choose what to fix)")
 
-        highlighted = highlight_text(improved)
+        lines = text.split("\n")
+        improved_lines = []
 
-        st.markdown(highlighted, unsafe_allow_html=True)
+        for i, line in enumerate(lines):
+            if len(line.strip()) > 20:
 
-        # Generate PDF
+                suggestion = suggest_improvement(line)
+
+                if suggestion != line:
+                    st.write(f"**Original:** {line}")
+                    st.write(f"👉 Suggested: {suggestion}")
+
+                    apply_fix = st.checkbox(f"Apply fix for line {i}")
+
+                    if apply_fix:
+                        improved_lines.append(suggestion)
+                    else:
+                        improved_lines.append(line)
+                else:
+                    improved_lines.append(line)
+            else:
+                improved_lines.append(line)
+
+        st.subheader("✨ Final Resume Preview")
+
+        highlighted = [highlight_line(l) for l in improved_lines]
+
+        st.markdown("<br>".join(highlighted), unsafe_allow_html=True)
+
         pdf = create_pdf(highlighted)
 
         st.download_button(
-            "📥 Download Professional PDF Resume",
+            "📥 Download Professional Resume PDF",
             pdf,
-            file_name="professional_resume.pdf",
+            file_name="final_resume.pdf",
             mime="application/pdf"
         )
+
+    else:
+        st.error("Could not extract text from file.")
