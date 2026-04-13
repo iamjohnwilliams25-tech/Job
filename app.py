@@ -1,105 +1,85 @@
 import streamlit as st
-from datetime import datetime
+import pdfplumber
+import docx
 
-st.set_page_config(layout="centered")
-st.title("🚀 AI Resume Builder & Analyzer")
+st.set_page_config(layout="wide")
+st.title("🚀 AI Resume Analyzer")
 
-st.caption(f"Build job-ready resume in seconds | {datetime.now().strftime('%Y-%m-%d')}")
+# ---------------- FILE UPLOAD ----------------
+uploaded_file = st.file_uploader("Upload your Resume (PDF or DOCX)", type=["pdf", "docx"])
 
-# ---------------- INPUT SECTION ----------------
-st.subheader("📄 Enter Your Details")
+# ---------------- EXTRACT TEXT ----------------
+def extract_text(file):
+    text = ""
 
-name = st.text_input("Full Name")
-email = st.text_input("Email")
-phone = st.text_input("Phone Number")
+    if file.type == "application/pdf":
+        with pdfplumber.open(file) as pdf:
+            for page in pdf.pages:
+                text += page.extract_text() or ""
 
-role = st.text_input("Target Job Role (e.g., Data Analyst)")
+    elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        doc = docx.Document(file)
+        for para in doc.paragraphs:
+            text += para.text + "\n"
 
-skills = st.text_area("Skills (comma separated)")
-experience = st.text_area("Experience (write in bullet points)")
-education = st.text_area("Education")
+    return text
 
-# ---------------- GENERATE BUTTON ----------------
-if st.button("🚀 Generate Resume"):
+# ---------------- ANALYSIS ----------------
+def analyze_resume(text):
+    score = 50
+    suggestions = []
 
-    if not name or not skills:
-        st.warning("Please fill at least Name and Skills")
+    if len(text) > 500:
+        score += 20
     else:
+        suggestions.append("Add more content to your resume")
 
-        # ---------------- ATS SCORE ----------------
-        score = 50
+    if "experience" in text.lower():
+        score += 10
+    else:
+        suggestions.append("Add experience section")
 
-        if len(skills.split(",")) >= 5:
-            score += 20
-        if len(experience) > 50:
-            score += 15
-        if role:
-            score += 15
+    if "skills" in text.lower():
+        score += 10
+    else:
+        suggestions.append("Add skills section")
 
-        score = min(score, 100)
+    if len(text.split()) > 150:
+        score += 10
+    else:
+        suggestions.append("Increase word count for better ATS performance")
 
-        # ---------------- SUGGESTIONS ----------------
-        suggestions = []
+    return min(score, 100), suggestions
 
-        if len(skills.split(",")) < 5:
-            suggestions.append("Add more relevant skills (at least 5+)")
+# ---------------- UI ----------------
+if uploaded_file:
 
-        if len(experience) < 50:
-            suggestions.append("Describe your experience in more detail with numbers/results")
+    text = extract_text(uploaded_file)
 
-        if not role:
-            suggestions.append("Add target job role for better optimization")
+    if text:
+        st.subheader("📄 Extracted Resume")
+        st.text_area("Resume Content", text, height=200)
 
-        # ---------------- JOB MATCH TIPS ----------------
-        job_tips = []
-        if role:
-            job_tips.append(f"Include keywords related to '{role}' in your resume")
-            job_tips.append("Use action words like 'Developed', 'Managed', 'Improved'")
-            job_tips.append("Add measurable achievements (e.g., increased sales by 20%)")
-
-        # ---------------- RESUME OUTPUT ----------------
-        resume_text = f"""
-{name}
-{email} | {phone}
-
-🎯 Target Role:
-{role}
-
-💼 Skills:
-{skills}
-
-📌 Experience:
-{experience}
-
-🎓 Education:
-{education}
-"""
-
-        # ---------------- DISPLAY ----------------
-        st.success("✅ Resume Generated Successfully!")
+        score, suggestions = analyze_resume(text)
 
         st.subheader("📊 ATS Score")
         st.progress(score)
         st.write(f"Score: **{score}/100**")
 
-        st.subheader("📄 Your Resume")
-        st.text(resume_text)
+        st.subheader("⚠️ Suggestions")
+        for s in suggestions:
+            st.write(f"• {s}")
 
-        st.subheader("💡 Improvement Suggestions")
-        if suggestions:
-            for s in suggestions:
-                st.write(f"• {s}")
-        else:
-            st.write("✅ Your resume looks strong!")
+        st.subheader("✨ Improved Version (Basic)")
+        improved = text.replace("responsible for", "managed and executed")
 
-        st.subheader("🎯 Job Optimization Tips")
-        for tip in job_tips:
-            st.write(f"• {tip}")
+        st.text_area("Improved Resume", improved, height=200)
 
-        # ---------------- DOWNLOAD ----------------
         st.download_button(
-            label="📥 Download Resume",
-            data=resume_text,
-            file_name="resume.txt",
-            mime="text/plain"
+            "📥 Download Improved Resume",
+            improved,
+            file_name="improved_resume.txt"
         )
+
+    else:
+        st.error("Could not extract text from file.")
