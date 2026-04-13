@@ -5,6 +5,13 @@ from openai import OpenAI
 import json
 
 st.set_page_config(layout="wide")
+st.markdown("""
+<style>
+.block-container {
+    padding-top: 1rem;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # ---------- API ----------
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
