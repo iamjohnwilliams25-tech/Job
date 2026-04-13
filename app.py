@@ -26,14 +26,18 @@ body {background:#f4f6fb;}
     padding:15px;
     border-radius:12px;
     box-shadow:0 4px 12px rgba(0,0,0,0.06);
-    height:260px;
+    height:280px;
     overflow:auto;
 }
 
-.score-big {
+.score-red {color:#dc2626; font-weight:800; font-size:20px;}
+.score-green {color:#16a34a; font-weight:800; font-size:20px;}
+.score-dark {color:#065f46; font-weight:900; font-size:22px;}
+
+.big-score {
     text-align:center;
-    font-size:40px;
-    font-weight:800;
+    font-size:48px;
+    font-weight:900;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -56,56 +60,70 @@ def extract_text(file):
             text += para.text + "\n"
     return text
 
+# ---------- COLOR ----------
+def get_color_class(score):
+    if score < 90:
+        return "score-red"
+    elif score == 100:
+        return "score-dark"
+    else:
+        return "score-green"
+
 # ---------- AI ANALYSIS ----------
 def analyze_resume(text):
     prompt = f"""
-Analyze resume and return JSON:
+Return ONLY valid JSON.
 
-Sections: Profile, Experience, Education, Skills, Achievements, Languages, Hobbies, Contact
-
-Each must include:
-- score (0-100)
-- reasons
-- suggestions
+{{
+"profile": {{"score": 80, "reasons": ["..."], "suggestions": ["..."]}},
+"experience": {{"score": 75, "reasons": ["..."], "suggestions": ["..."]}},
+"education": {{"score": 70, "reasons": ["..."], "suggestions": ["..."]}},
+"skills": {{"score": 85, "reasons": ["..."], "suggestions": ["..."]}},
+"achievements": {{"score": 60, "reasons": ["..."], "suggestions": ["..."]}},
+"languages": {{"score": 90, "reasons": ["..."], "suggestions": ["..."]}},
+"hobbies": {{"score": 80, "reasons": ["..."], "suggestions": ["..."]}},
+"contact": {{"score": 95, "reasons": ["..."], "suggestions": ["..."]}}
+}}
 
 Resume:
 {text}
 """
 
-    res = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.3
-    )
+    try:
+        res = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role":"user","content":prompt}],
+            temperature=0.2
+        )
 
-    return json.loads(res.choices[0].message.content)
+        content = res.choices[0].message.content.strip()
+
+        if "```" in content:
+            content = content.split("```")[1]
+
+        return json.loads(content)
+
+    except:
+        return {
+            k: {"score": 70, "reasons": ["Parsing error"], "suggestions": ["Retry"]}
+            for k in ["profile","experience","education","skills","achievements","languages","hobbies","contact"]
+        }
 
 # ---------- FINAL RESUME ----------
-def generate_final_resume(text):
-    prompt = f"""
-Rewrite resume in BEST PROFESSIONAL FORMAT:
-
-- Big headings
-- Bullet points
-- Clean structure
-- Corporate tone
-- No fake data
-
-Resume:
-{text}
-"""
-
+def generate_resume(text):
     res = client.chat.completions.create(
         model="gpt-4.1-mini",
-        messages=[{"role":"user","content":prompt}]
+        messages=[{
+            "role":"user",
+            "content":"Rewrite this resume professionally with headings and bullet points:\n"+text
+        }]
     )
-
     return res.choices[0].message.content
 
 # ---------- PDF ----------
 def create_pdf(text):
-    file_path = "/mnt/data/resume.pdf"
-    doc = SimpleDocTemplate(file_path)
+    path = "/mnt/data/resume.pdf"
+    doc = SimpleDocTemplate(path)
     styles = getSampleStyleSheet()
 
     story = []
@@ -114,7 +132,7 @@ def create_pdf(text):
         story.append(Spacer(1, 10))
 
     doc.build(story)
-    return file_path
+    return path
 
 # ---------- MAIN ----------
 if file:
@@ -122,12 +140,13 @@ if file:
 
     data = analyze_resume(text)
 
-    # ---------- OVERALL SCORE ----------
     scores = [data[s]["score"] for s in data]
     overall = int(sum(scores)/len(scores))
 
-    st.markdown("## 📊 Overall Resume Score")
-    st.markdown(f'<div class="score-big">{overall}/100</div>', unsafe_allow_html=True)
+    # ---------- OVERALL ----------
+    st.markdown("## 📊 Overall Score")
+    color = get_color_class(overall)
+    st.markdown(f'<div class="big-score {color}">{overall}/100</div>', unsafe_allow_html=True)
     st.progress(overall)
 
     # ---------- GRID ----------
@@ -137,13 +156,14 @@ if file:
 
     for i, sec in enumerate(data):
         d = data[sec]
+        color = get_color_class(d["score"])
 
         with cols[i % 4]:
             st.markdown('<div class="card">', unsafe_allow_html=True)
 
             st.write(f"**{sec.upper()}**")
+            st.markdown(f'<div class="{color}">{d["score"]}/100</div>', unsafe_allow_html=True)
             st.progress(d["score"])
-            st.write(f"{d['score']}/100")
 
             st.write("❌ Why:")
             for r in d["reasons"]:
@@ -158,17 +178,16 @@ if file:
     # ---------- FINAL RESUME ----------
     st.markdown("## ✨ Final Professional Resume")
 
-    final_resume = generate_final_resume(text)
-
+    final_resume = generate_resume(text)
     st.markdown(final_resume)
 
     # ---------- DOWNLOAD ----------
-    pdf_path = create_pdf(final_resume)
+    pdf = create_pdf(final_resume)
 
-    with open(pdf_path, "rb") as f:
+    with open(pdf, "rb") as f:
         st.download_button(
-            label="📄 Download Resume as PDF",
-            data=f,
+            "📄 Download Resume",
+            f,
             file_name="Professional_Resume.pdf",
             mime="application/pdf"
         )
