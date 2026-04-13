@@ -12,26 +12,30 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 # ---------- UI ----------
 st.markdown("""
 <style>
-body {background:#f5f7fb;}
+body {background:#f4f6fb;}
 .title {text-align:center;font-size:34px;font-weight:700;}
 .subtitle {text-align:center;color:#6b7280;margin-bottom:20px;}
 .card {
     background:white;
-    padding:20px;
-    border-radius:12px;
-    box-shadow:0 4px 12px rgba(0,0,0,0.05);
-    margin-bottom:15px;
+    padding:18px;
+    border-radius:10px;
+    box-shadow:0 4px 10px rgba(0,0,0,0.05);
+    margin-bottom:10px;
 }
-.section {font-size:22px;font-weight:600;margin-top:20px;}
+.section-title {
+    font-size:20px;
+    font-weight:700;
+    margin-top:20px;
+}
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown('<div class="title">🚀 Resume Analyzer Pro</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">AI-powered professional resume upgrade</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">AI-powered professional resume builder</div>', unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("Upload Resume", type=["pdf", "docx"])
 
-# ---------- EXTRACT TEXT ----------
+# ---------- EXTRACT ----------
 def extract_text(file):
     text = ""
     if file.type == "application/pdf":
@@ -44,46 +48,67 @@ def extract_text(file):
             text += para.text + "\n"
     return text
 
-# ---------- SPLIT SECTIONS ----------
-def split_sections(text):
+# ---------- SMART SECTION DETECTION ----------
+def detect_sections(text):
     sections = {
+        "Profile": "",
         "Education": "",
         "Experience": "",
         "Skills": "",
-        "Other": ""
+        "Languages": "",
+        "Hobbies": "",
+        "Contact": ""
     }
 
-    current = "Other"
+    current = "Profile"
+
     for line in text.split("\n"):
         l = line.lower()
 
-        if "education" in l:
+        if any(k in l for k in ["education", "academic"]):
             current = "Education"
-        elif "experience" in l:
+        elif any(k in l for k in ["experience", "work"]):
             current = "Experience"
-        elif "skills" in l:
+        elif "skill" in l:
             current = "Skills"
+        elif any(k in l for k in ["language"]):
+            current = "Languages"
+        elif any(k in l for k in ["hobbies", "interest"]):
+            current = "Hobbies"
+        elif any(k in l for k in ["phone", "email", "address"]):
+            current = "Contact"
 
         sections[current] += line + "\n"
 
     return sections
 
-# ---------- AI REWRITE ----------
-def rewrite_section(section_text, section_name):
+# ---------- AI FULL RESUME ----------
+def generate_professional_resume(text):
     try:
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": f"You are a top-tier resume writer. Rewrite the {section_name} section professionally with strong action verbs, clear bullet points, and corporate tone. Keep it realistic and not fake."
+                    "content": """
+You are an expert resume writer.
+
+Rewrite the entire resume professionally with:
+- Clear sections (Profile, Experience, Education, Skills, Languages, Hobbies, Contact)
+- Bold section headings
+- Bullet points for responsibilities
+- Strong action verbs
+- Clean formatting
+- Keep content realistic (do NOT add fake experience)
+- Make it look like a premium corporate resume
+"""
                 },
                 {
                     "role": "user",
-                    "content": section_text
+                    "content": text
                 }
             ],
-            temperature=0.6
+            temperature=0.5
         )
 
         return response.choices[0].message.content.strip()
@@ -92,55 +117,40 @@ def rewrite_section(section_text, section_name):
         return f"Error: {e}"
 
 # ---------- SCORING ----------
-def score_section(text):
-    score = 6
+def score_resume(text):
+    score = 60
+
     if re.search(r"\d+%|\d+", text):
-        score += 2
+        score += 10
     if re.search(r"\b(managed|led|developed)\b", text.lower()):
-        score += 2
-    return min(score, 10)
+        score += 10
+    if "skills" in text.lower():
+        score += 10
+    if "experience" in text.lower():
+        score += 10
+
+    return min(score, 95)
 
 # ---------- MAIN ----------
 if uploaded_file:
     text = extract_text(uploaded_file)
-    sections = split_sections(text)
 
-    # ---------- SCORES ----------
+    # SCORE
+    score = score_resume(text)
+
     st.markdown("## 📊 Resume Score")
+    st.progress(score)
+    st.success(f"{score}/100")
 
-    cols = st.columns(4)
-    scores = {}
+    # ORIGINAL
+    st.markdown("## 📄 Original Resume")
+    st.code(text)
 
-    for i, (sec, content) in enumerate(sections.items()):
-        s = score_section(content)
-        scores[sec] = s
+    # AI OUTPUT
+    st.markdown("## ✨ Professional Resume (AI Generated)")
 
-        with cols[i]:
-            st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.write(f"**{sec}**")
-            st.progress(s * 10)
-            st.write(f"{s}/10")
-            st.markdown('</div>', unsafe_allow_html=True)
+    improved = generate_professional_resume(text)
 
-    total = int(sum(scores.values()) / len(scores) * 10)
-    st.success(f"Overall Score: {total}/100")
-
-    # ---------- AI IMPROVED SECTIONS ----------
-    st.markdown("## ✨ AI Professional Resume Upgrade")
-
-    for sec, content in sections.items():
-        if len(content.strip()) > 30:
-
-            st.markdown(f"### 🔹 {sec}")
-
-            improved = rewrite_section(content, sec)
-
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.write("**Original**")
-                st.code(content)
-
-            with col2:
-                st.write("**Improved (Professional)**")
-                st.code(improved)
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown(improved)
+    st.markdown('</div>', unsafe_allow_html=True)
