@@ -2,38 +2,35 @@ import streamlit as st
 import pdfplumber
 import docx
 import re
-import pandas as pd
-import matplotlib.pyplot as plt
 
 st.set_page_config(layout="wide")
 
-# ---------- CUSTOM CSS ----------
+# ---------- CLEAN CSS ----------
 st.markdown("""
 <style>
-body {
-    background-color: #0f172a;
-    color: white;
-}
-.big-title {
-    font-size: 40px;
-    font-weight: bold;
+.main-title {
+    font-size: 34px;
+    font-weight: 700;
     text-align: center;
-    background: linear-gradient(to right, #6366f1, #9333ea);
-    -webkit-background-clip: text;
-    color: transparent;
+    margin-bottom: 10px;
 }
 .card {
-    padding: 20px;
-    border-radius: 15px;
-    background: #1e293b;
-    box-shadow: 0px 0px 10px rgba(0,0,0,0.3);
-    margin-bottom: 15px;
+    padding: 18px;
+    border-radius: 12px;
+    background: #f8fafc;
+    margin-bottom: 12px;
+    border: 1px solid #e2e8f0;
+}
+.section-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-top: 20px;
 }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="big-title">🚀 Resume Analyzer Pro</div>', unsafe_allow_html=True)
-st.write("### Upload your resume and get deep insights")
+st.markdown('<div class="main-title">📄 Resume Analyzer Pro</div>', unsafe_allow_html=True)
+st.write("Upload your resume and get actionable insights")
 
 uploaded_file = st.file_uploader("Upload Resume", type=["pdf", "docx"])
 
@@ -50,80 +47,111 @@ def extract_text(file):
             text += para.text + "\n"
     return text.lower()
 
-# ---------- SCORING ----------
-def score_resume(text):
-    edu = 7 if "college" in text else 4
-    exp = 8 if "experience" in text else 5
-    ach = 6 if re.search(r"\d+", text) else 3
-    skills = 7 if "skills" in text else 4
-    fmt = 6
-    lang = 6
+# ---------- ANALYSIS ----------
+def analyze(text):
+    scores = {}
+    suggestions = {}
 
-    return {
-        "Education": edu,
-        "Experience": exp,
-        "Achievements": ach,
-        "Skills": skills,
-        "Formatting": fmt,
-        "Language": lang
-    }
+    # EDUCATION
+    edu_score = 5
+    edu_sug = []
+    if "college" in text or "university" in text:
+        edu_score += 3
+    else:
+        edu_sug.append("Add proper college/university name")
+
+    if "%" in text or "cgpa" in text:
+        edu_score += 2
+    else:
+        edu_sug.append("Mention your percentage or CGPA")
+
+    scores["Education"] = min(edu_score, 10)
+    suggestions["Education"] = edu_sug
+
+    # EXPERIENCE
+    exp_score = 5
+    exp_sug = []
+    if "experience" in text:
+        exp_score += 2
+    else:
+        exp_sug.append("Add a clear 'Work Experience' section")
+
+    if re.search(r"\b(managed|led|developed)\b", text):
+        exp_score += 3
+    else:
+        exp_sug.append("Use strong action words like 'managed', 'led', 'developed'")
+
+    scores["Experience"] = min(exp_score, 10)
+    suggestions["Experience"] = exp_sug
+
+    # ACHIEVEMENTS
+    ach_score = 3
+    ach_sug = []
+    if re.search(r"\d+%", text):
+        ach_score += 5
+    else:
+        ach_sug.append("Add measurable achievements (e.g., increased sales by 20%)")
+
+    scores["Achievements"] = min(ach_score, 10)
+    suggestions["Achievements"] = ach_sug
+
+    # SKILLS
+    skill_score = 4
+    skill_sug = []
+    if "skills" in text:
+        skill_score += 4
+    else:
+        skill_sug.append("Add a dedicated Skills section")
+
+    scores["Skills"] = min(skill_score, 10)
+    suggestions["Skills"] = skill_sug
+
+    # LANGUAGE
+    lang_score = 6
+    lang_sug = []
+    weak = re.findall(r"\b(responsible|worked|helped)\b", text)
+    if len(weak) > 5:
+        lang_score -= 2
+        lang_sug.append("Avoid weak words like 'responsible', 'worked', 'helped'")
+
+    scores["Language"] = max(min(lang_score, 10), 3)
+    suggestions["Language"] = lang_sug
+
+    return scores, suggestions
 
 # ---------- MAIN ----------
 if uploaded_file:
     text = extract_text(uploaded_file)
 
-    scores = score_resume(text)
-
+    scores, suggestions = analyze(text)
     total = sum(scores.values())
-    percent = int((total / 60) * 100)
+    percent = int((total / 50) * 100)
 
-    # ---------- SCORE CARD ----------
-    col1, col2 = st.columns(2)
+    # ---------- SCORE ----------
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("📊 Overall Score")
+    st.progress(percent)
+    st.write(f"### {percent}/100")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    with col1:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("📊 Overall Score")
-        st.progress(percent)
-        st.write(f"### {percent}/100")
-        st.markdown('</div>', unsafe_allow_html=True)
+    # ---------- SECTION SCORES ----------
+    st.subheader("📌 Section Scores")
 
-    with col2:
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.subheader("⚠️ Key Insight")
-        if percent < 60:
-            st.write("Your resume needs strong improvement")
-        elif percent < 80:
-            st.write("Good resume, but can be improved")
-        else:
-            st.write("Strong resume 👍")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    # ---------- SECTION CARDS ----------
-    st.subheader("📈 Section Analysis")
-
-    cols = st.columns(3)
+    cols = st.columns(5)
     for i, (k, v) in enumerate(scores.items()):
-        with cols[i % 3]:
+        with cols[i]:
             st.markdown('<div class="card">', unsafe_allow_html=True)
-            st.write(f"### {k}")
+            st.write(f"**{k}**")
             st.progress(v * 10)
             st.write(f"{v}/10")
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # ---------- RADAR CHART ----------
-    st.subheader("📊 Performance Graph")
+    # ---------- SUGGESTIONS ----------
+    st.markdown('<div class="section-title">💡 Improvement Suggestions</div>', unsafe_allow_html=True)
 
-    labels = list(scores.keys())
-    values = list(scores.values())
+    for section, sug_list in suggestions.items():
+        if sug_list:
+            st.markdown(f"### 🔹 {section}")
 
-    values += values[:1]
-    labels += labels[:1]
-
-    fig, ax = plt.subplots()
-    ax.plot(values)
-    ax.fill(values, alpha=0.3)
-
-    ax.set_xticks(range(len(labels)))
-    ax.set_xticklabels(labels)
-
-    st.pyplot(fig)
+            for s in sug_list:
+                st.code(s)
