@@ -21,8 +21,8 @@ body {background:#f4f6fb;}
 
 .name {
     text-align:center;
-    font-size:24px;
-    font-weight:600;
+    font-size:26px;
+    font-weight:700;
     margin-bottom:20px;
 }
 
@@ -57,11 +57,21 @@ def extract_text(file):
             text += para.text + "\n"
     return text
 
-# ---------- NAME ----------
+# ---------- NAME DETECTION (IMPROVED) ----------
 def get_name(text):
-    for line in text.split("\n")[:5]:
-        if len(line.split()) <= 4 and len(line.strip()) > 3:
-            return line.strip()
+    lines = text.split("\n")[:8]
+
+    for line in lines:
+        clean = line.strip()
+
+        # Detect ALL CAPS name
+        if clean.isupper() and 2 <= len(clean.split()) <= 4:
+            return clean.title()
+
+        # Detect normal name
+        if 2 <= len(clean.split()) <= 4 and len(clean) > 5:
+            return clean
+
     return "Candidate"
 
 # ---------- SECTION DETECTION ----------
@@ -101,18 +111,28 @@ def detect_sections(text):
 
     return sections
 
-# ---------- SCORING ----------
+# ---------- SCORING WITH REASONS ----------
 def score_section(text):
     score = 60
+    reasons = []
+    suggestions = []
 
-    if len(text.strip()) > 50:
-        score += 10
-    if re.search(r"\d+%|\d+", text):
-        score += 10
-    if re.search(r"\b(managed|led|developed)\b", text.lower()):
-        score += 10
+    if len(text.strip()) < 50:
+        score -= 10
+        reasons.append("Section content is too short")
+        suggestions.append("Add more detailed information")
 
-    return min(score, 100)
+    if not re.search(r"\d+%|\d+", text):
+        score -= 10
+        reasons.append("No measurable results")
+        suggestions.append("Add numbers like 20%, 30% growth")
+
+    if not re.search(r"\b(managed|led|developed)\b", text.lower()):
+        score -= 10
+        reasons.append("Weak action verbs")
+        suggestions.append("Use words like managed, led, developed")
+
+    return max(score, 40), reasons, suggestions
 
 def get_color(score):
     if score < 90:
@@ -131,13 +151,14 @@ def generate_resume(text):
                 {
                     "role": "system",
                     "content": """
-Create a premium, CEO-level resume:
-- Extract candidate name properly
-- Use bold headings
+Rewrite this resume professionally:
+
+- Extract candidate name clearly at top
+- Use BIG section headings (## PROFILE, ## EXPERIENCE, etc.)
 - Use bullet points
-- Keep clean spacing
-- Maintain professional tone
-- Do NOT invent fake data
+- Clean spacing
+- Strong corporate tone
+- Do NOT add fake data
 """
                 },
                 {"role": "user", "content": text}
@@ -160,11 +181,10 @@ if uploaded_file:
     st.markdown("## 📊 Section Score Dashboard")
 
     cols = st.columns(4)
-
     scores = []
 
     for i, (sec, content) in enumerate(sections.items()):
-        score = score_section(content)
+        score, reasons, suggestions = score_section(content)
         scores.append(score)
         color = get_color(score)
 
@@ -173,6 +193,17 @@ if uploaded_file:
             st.write(f"**{sec}**")
             st.markdown(f'<div class="{color}">{score}/100</div>', unsafe_allow_html=True)
             st.progress(score)
+
+            if reasons:
+                st.write("❌ Why:")
+                for r in reasons:
+                    st.write(f"- {r}")
+
+            if suggestions:
+                st.write("💡 Fix:")
+                for s in suggestions:
+                    st.code(s)
+
             st.markdown('</div>', unsafe_allow_html=True)
 
     overall = int(sum(scores) / len(scores))
