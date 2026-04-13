@@ -3,9 +3,6 @@ import pdfplumber
 import docx
 from openai import OpenAI
 import json
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-from io import BytesIO
 
 st.set_page_config(layout="wide")
 
@@ -18,31 +15,34 @@ body {background:#f4f6fb;}
 
 .title {
     text-align:center;
-    font-size:40px;
+    font-size:38px;
     font-weight:900;
 }
 
-.section-title {
-    font-size:20px;
-    font-weight:800;
+.card {
+    background:#ffffff;
+    padding:12px;
+    border-radius:10px;
+    box-shadow:0 3px 8px rgba(0,0,0,0.06);
     margin-bottom:10px;
 }
 
-.card {
-    background: linear-gradient(135deg, #ffffff, #f1f5f9);
-    padding:18px;
-    border-radius:14px;
-    box-shadow:0 4px 12px rgba(0,0,0,0.08);
-    margin-bottom:15px;
+.section-title {
+    font-size:16px;
+    font-weight:800;
 }
 
-.score-red {color:#dc2626; font-weight:800; font-size:22px;}
-.score-green {color:#16a34a; font-weight:800; font-size:22px;}
-.score-dark {color:#065f46; font-weight:900; font-size:24px;}
+.small-text {
+    font-size:13px;
+    margin-bottom:4px;
+}
+
+.red {color:#dc2626; font-weight:700;}
+.green {color:#16a34a; font-weight:800;}
 
 .big-score {
     text-align:center;
-    font-size:52px;
+    font-size:42px;
     font-weight:900;
 }
 </style>
@@ -51,7 +51,9 @@ body {background:#f4f6fb;}
 st.markdown('<div class="title">🚀 Resume Analyzer AI PRO</div>', unsafe_allow_html=True)
 
 file = st.file_uploader("Upload Resume", type=["pdf","docx"])
-job_role = st.text_input("🎯 Target Job Role")
+job_role = st.text_input("💼 Applying for positions (e.g. CSR, Sales Manager)")
+
+analyze_btn = st.button("🔍 Analyze Resume")
 
 # ---------- EXTRACT ----------
 def extract_text(file):
@@ -68,28 +70,32 @@ def extract_text(file):
 
 # ---------- COLOR ----------
 def get_color(score):
-    if score < 90:
-        return "score-red"
-    elif score == 100:
-        return "score-dark"
-    else:
-        return "score-green"
+    return "green" if score == 100 else "red"
 
-# ---------- AI ----------
-def analyze_resume(text):
+# ---------- AI ANALYSIS ----------
+def analyze_resume(text, role):
     prompt = f"""
-Return ONLY JSON:
+You are an expert ATS resume evaluator.
+
+Evaluate this resume for the role: {role}
+
+Return ONLY JSON.
 
 {{
-"profile": {{"score": 80, "reasons": ["..."], "suggestions": ["..."]}},
-"experience": {{"score": 75, "reasons": ["..."], "suggestions": ["..."]}},
-"education": {{"score": 70, "reasons": ["..."], "suggestions": ["..."]}},
-"skills": {{"score": 85, "reasons": ["..."], "suggestions": ["..."]}},
-"achievements": {{"score": 60, "reasons": ["..."], "suggestions": ["..."]}},
-"languages": {{"score": 90, "reasons": ["..."], "suggestions": ["..."]}},
-"hobbies": {{"score": 80, "reasons": ["..."], "suggestions": ["..."]}},
-"contact": {{"score": 95, "reasons": ["..."], "suggestions": ["..."]}}
+"profile": {{"score": 80, "reason": "...", "fix": "..."}},
+"experience": {{"score": 75, "reason": "...", "fix": "..."}},
+"education": {{"score": 70, "reason": "...", "fix": "..."}},
+"skills": {{"score": 85, "reason": "...", "fix": "..."}},
+"achievements": {{"score": 60, "reason": "...", "fix": "..."}},
+"languages": {{"score": 90, "reason": "...", "fix": "..."}},
+"hobbies": {{"score": 80, "reason": "...", "fix": "..."}},
+"contact": {{"score": 95, "reason": "...", "fix": "..."}}
 }}
+
+Rules:
+- Score based on relevance to job role
+- Reason must be specific (NOT generic)
+- Fix must be actionable
 
 Resume:
 {text}
@@ -99,7 +105,7 @@ Resume:
         res = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[{"role":"user","content":prompt}],
-            temperature=0.2
+            temperature=0.3
         )
 
         content = res.choices[0].message.content.strip()
@@ -111,41 +117,37 @@ Resume:
 
     except:
         return {
-            k: {"score": 70, "reasons": ["Parsing issue"], "suggestions": ["Retry"]}
+            k: {"score": 70, "reason": "Parsing issue", "fix": "Retry"}
             for k in ["profile","experience","education","skills","achievements","languages","hobbies","contact"]
         }
 
 # ---------- FINAL RESUME ----------
-def generate_resume(text):
+def generate_resume(text, role):
+    prompt = f"""
+Rewrite this resume professionally for the role: {role}
+
+Requirements:
+- Strong ATS keywords for this role
+- Clear sections
+- Bullet points
+- Impact-driven language
+- Keep original data (no fake info)
+
+Resume:
+{text}
+"""
     res = client.chat.completions.create(
         model="gpt-4.1-mini",
-        messages=[{
-            "role":"user",
-            "content":"Rewrite this resume professionally with clear sections and bullet points:\n"+text
-        }]
+        messages=[{"role":"user","content":prompt}]
     )
     return res.choices[0].message.content
 
-# ---------- PDF (FIXED) ----------
-def create_pdf(text):
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer)
-    styles = getSampleStyleSheet()
-
-    story = []
-    for line in text.split("\n"):
-        story.append(Paragraph(line, styles["Normal"]))
-        story.append(Spacer(1, 10))
-
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
-
 # ---------- MAIN ----------
-if file:
+if file and job_role and analyze_btn:
+
     text = extract_text(file)
 
-    data = analyze_resume(text)
+    data = analyze_resume(text, job_role)
 
     scores = [data[s]["score"] for s in data]
     overall = int(sum(scores)/len(scores))
@@ -157,7 +159,7 @@ if file:
     st.progress(overall)
 
     # ---------- SECTIONS ----------
-    st.markdown("## 📌 Section Analysis")
+    st.markdown("## 📌 Section Insights")
 
     cols = st.columns(2)
 
@@ -168,34 +170,15 @@ if file:
         with cols[i % 2]:
             st.markdown('<div class="card">', unsafe_allow_html=True)
 
-            st.markdown(f'<div class="section-title">{sec.upper()}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="{color}">{d["score"]}/100</div>', unsafe_allow_html=True)
-            st.progress(d["score"])
+            st.markdown(f'<div class="section-title">{sec.upper()} — <span class="{color}">{d["score"]}</span></div>', unsafe_allow_html=True)
 
-            if d["reasons"]:
-                st.write("❌ Why:")
-                for r in d["reasons"]:
-                    st.write(f"- {r}")
-
-            if d["suggestions"]:
-                st.write("💡 Fix:")
-                for s in d["suggestions"]:
-                    st.write(f"- {s}")
+            st.markdown(f'<div class="small-text">❌ {d["reason"]}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="small-text">💡 {d["fix"]}</div>', unsafe_allow_html=True)
 
             st.markdown('</div>', unsafe_allow_html=True)
 
     # ---------- FINAL RESUME ----------
-    st.markdown("## ✨ Final Professional Resume")
+    st.markdown("## ✨ Role-Based Improved Resume")
 
-    final_resume = generate_resume(text)
+    final_resume = generate_resume(text, job_role)
     st.markdown(final_resume)
-
-    # ---------- DOWNLOAD ----------
-    pdf_buffer = create_pdf(final_resume)
-
-    st.download_button(
-        "📄 Download Resume",
-        pdf_buffer,
-        file_name="Professional_Resume.pdf",
-        mime="application/pdf"
-    )
