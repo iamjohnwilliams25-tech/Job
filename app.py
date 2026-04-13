@@ -5,6 +5,7 @@ from openai import OpenAI
 import json
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+from io import BytesIO
 
 st.set_page_config(layout="wide")
 
@@ -17,26 +18,31 @@ body {background:#f4f6fb;}
 
 .title {
     text-align:center;
-    font-size:38px;
+    font-size:40px;
+    font-weight:900;
+}
+
+.section-title {
+    font-size:20px;
     font-weight:800;
+    margin-bottom:10px;
 }
 
 .card {
-    background:white;
-    padding:15px;
-    border-radius:12px;
-    box-shadow:0 4px 12px rgba(0,0,0,0.06);
-    height:280px;
-    overflow:auto;
+    background: linear-gradient(135deg, #ffffff, #f1f5f9);
+    padding:18px;
+    border-radius:14px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.08);
+    margin-bottom:15px;
 }
 
-.score-red {color:#dc2626; font-weight:800; font-size:20px;}
-.score-green {color:#16a34a; font-weight:800; font-size:20px;}
-.score-dark {color:#065f46; font-weight:900; font-size:22px;}
+.score-red {color:#dc2626; font-weight:800; font-size:22px;}
+.score-green {color:#16a34a; font-weight:800; font-size:22px;}
+.score-dark {color:#065f46; font-weight:900; font-size:24px;}
 
 .big-score {
     text-align:center;
-    font-size:48px;
+    font-size:52px;
     font-weight:900;
 }
 </style>
@@ -61,7 +67,7 @@ def extract_text(file):
     return text
 
 # ---------- COLOR ----------
-def get_color_class(score):
+def get_color(score):
     if score < 90:
         return "score-red"
     elif score == 100:
@@ -69,10 +75,10 @@ def get_color_class(score):
     else:
         return "score-green"
 
-# ---------- AI ANALYSIS ----------
+# ---------- AI ----------
 def analyze_resume(text):
     prompt = f"""
-Return ONLY valid JSON.
+Return ONLY JSON:
 
 {{
 "profile": {{"score": 80, "reasons": ["..."], "suggestions": ["..."]}},
@@ -105,7 +111,7 @@ Resume:
 
     except:
         return {
-            k: {"score": 70, "reasons": ["Parsing error"], "suggestions": ["Retry"]}
+            k: {"score": 70, "reasons": ["Parsing issue"], "suggestions": ["Retry"]}
             for k in ["profile","experience","education","skills","achievements","languages","hobbies","contact"]
         }
 
@@ -115,15 +121,15 @@ def generate_resume(text):
         model="gpt-4.1-mini",
         messages=[{
             "role":"user",
-            "content":"Rewrite this resume professionally with headings and bullet points:\n"+text
+            "content":"Rewrite this resume professionally with clear sections and bullet points:\n"+text
         }]
     )
     return res.choices[0].message.content
 
-# ---------- PDF ----------
+# ---------- PDF (FIXED) ----------
 def create_pdf(text):
-    path = "/mnt/data/resume.pdf"
-    doc = SimpleDocTemplate(path)
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer)
     styles = getSampleStyleSheet()
 
     story = []
@@ -132,7 +138,8 @@ def create_pdf(text):
         story.append(Spacer(1, 10))
 
     doc.build(story)
-    return path
+    buffer.seek(0)
+    return buffer
 
 # ---------- MAIN ----------
 if file:
@@ -145,33 +152,35 @@ if file:
 
     # ---------- OVERALL ----------
     st.markdown("## 📊 Overall Score")
-    color = get_color_class(overall)
+    color = get_color(overall)
     st.markdown(f'<div class="big-score {color}">{overall}/100</div>', unsafe_allow_html=True)
     st.progress(overall)
 
-    # ---------- GRID ----------
+    # ---------- SECTIONS ----------
     st.markdown("## 📌 Section Analysis")
 
-    cols = st.columns(4)
+    cols = st.columns(2)
 
     for i, sec in enumerate(data):
         d = data[sec]
-        color = get_color_class(d["score"])
+        color = get_color(d["score"])
 
-        with cols[i % 4]:
+        with cols[i % 2]:
             st.markdown('<div class="card">', unsafe_allow_html=True)
 
-            st.write(f"**{sec.upper()}**")
+            st.markdown(f'<div class="section-title">{sec.upper()}</div>', unsafe_allow_html=True)
             st.markdown(f'<div class="{color}">{d["score"]}/100</div>', unsafe_allow_html=True)
             st.progress(d["score"])
 
-            st.write("❌ Why:")
-            for r in d["reasons"]:
-                st.write(f"- {r}")
+            if d["reasons"]:
+                st.write("❌ Why:")
+                for r in d["reasons"]:
+                    st.write(f"- {r}")
 
-            st.write("💡 Fix:")
-            for s in d["suggestions"]:
-                st.write(f"- {s}")
+            if d["suggestions"]:
+                st.write("💡 Fix:")
+                for s in d["suggestions"]:
+                    st.write(f"- {s}")
 
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -182,12 +191,11 @@ if file:
     st.markdown(final_resume)
 
     # ---------- DOWNLOAD ----------
-    pdf = create_pdf(final_resume)
+    pdf_buffer = create_pdf(final_resume)
 
-    with open(pdf, "rb") as f:
-        st.download_button(
-            "📄 Download Resume",
-            f,
-            file_name="Professional_Resume.pdf",
-            mime="application/pdf"
-        )
+    st.download_button(
+        "📄 Download Resume",
+        pdf_buffer,
+        file_name="Professional_Resume.pdf",
+        mime="application/pdf"
+    )
