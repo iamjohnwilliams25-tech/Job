@@ -4,13 +4,13 @@ import docx
 import re
 from openai import OpenAI
 
-# ---------- PAGE CONFIG ----------
+# ---------- PAGE ----------
 st.set_page_config(layout="wide")
 
-# ---------- OPENAI ----------
+# ---------- OPENAI (SAFE) ----------
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# ---------- UI DESIGN ----------
+# ---------- UI ----------
 st.markdown("""
 <style>
 body {background-color: #f9fafb;}
@@ -18,7 +18,6 @@ body {background-color: #f9fafb;}
     text-align:center;
     font-size:34px;
     font-weight:700;
-    margin-bottom:5px;
 }
 .subtitle {
     text-align:center;
@@ -32,19 +31,14 @@ body {background-color: #f9fafb;}
     box-shadow:0px 4px 10px rgba(0,0,0,0.05);
     margin-bottom:15px;
 }
-.section {
-    font-size:20px;
-    font-weight:600;
-    margin-top:25px;
-}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="title">🚀 Resume Analyzer Pro (AI Powered)</div>', unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Get smart insights & AI-powered improvements</div>', unsafe_allow_html=True)
+st.markdown('<div class="title">🚀 Resume Analyzer Pro</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">AI-powered resume improvement tool</div>', unsafe_allow_html=True)
 
-# ---------- FILE UPLOAD ----------
-uploaded_file = st.file_uploader("Upload Resume (PDF or DOCX)", type=["pdf", "docx"])
+# ---------- FILE ----------
+uploaded_file = st.file_uploader("Upload Resume (PDF/DOCX)", type=["pdf", "docx"])
 
 # ---------- TEXT EXTRACTION ----------
 def extract_text(file):
@@ -59,13 +53,13 @@ def extract_text(file):
             text += para.text + "\n"
     return text
 
-# ---------- AI IMPROVEMENT ----------
+# ---------- AI FUNCTION ----------
 def ai_improve_line(line):
     try:
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": "You are a professional resume writer. Improve the sentence using strong action words and make it impactful."},
+                {"role": "system", "content": "You are a professional resume writer. Improve this sentence using strong action verbs and make it impactful."},
                 {"role": "user", "content": line}
             ],
             temperature=0.7
@@ -83,85 +77,85 @@ def analyze(text):
     reasons = {}
 
     # EDUCATION
-    edu_score = 7
-    edu_reason = []
-    edu_sug = []
+    score = 7
+    reason = []
+    sug = []
 
     if "college" not in text_lower:
-        edu_score -= 2
-        edu_reason.append("College not clearly mentioned")
-        edu_sug.append("Add full college/university name")
+        score -= 2
+        reason.append("College not mentioned clearly")
+        sug.append("Add full college/university name")
 
     if "%" not in text_lower and "cgpa" not in text_lower:
-        edu_score -= 2
-        edu_reason.append("Marks/CGPA missing")
-        edu_sug.append("Mention your percentage or CGPA")
+        score -= 2
+        reason.append("Marks/CGPA missing")
+        sug.append("Mention percentage or CGPA")
 
-    scores["Education"] = max(min(edu_score, 10), 3)
-    reasons["Education"] = edu_reason
-    suggestions["Education"] = edu_sug
+    scores["Education"] = max(min(score, 10), 3)
+    reasons["Education"] = reason
+    suggestions["Education"] = sug
 
     # EXPERIENCE
-    exp_score = 7
-    exp_reason = []
-    exp_sug = []
+    score = 7
+    reason = []
+    sug = []
 
     if "experience" not in text_lower:
-        exp_score -= 2
-        exp_reason.append("Experience section not clear")
-        exp_sug.append("Add a proper Work Experience section")
+        score -= 2
+        reason.append("Experience section missing")
+        sug.append("Add Work Experience section")
 
     if not re.search(r"\b(managed|led|developed)\b", text_lower):
-        exp_score -= 2
-        exp_reason.append("Weak action words used")
-        exp_sug.append("Use strong verbs like managed, led, developed")
+        score -= 2
+        reason.append("Weak action words used")
+        sug.append("Use strong verbs like managed, led, developed")
 
-    scores["Experience"] = max(min(exp_score, 10), 3)
-    reasons["Experience"] = exp_reason
-    suggestions["Experience"] = exp_sug
+    scores["Experience"] = max(min(score, 10), 3)
+    reasons["Experience"] = reason
+    suggestions["Experience"] = sug
 
     # ACHIEVEMENTS
-    ach_score = 6
-    ach_reason = []
-    ach_sug = []
+    score = 6
+    reason = []
+    sug = []
 
     if not re.search(r"\d+%|\d+", text_lower):
-        ach_score -= 3
-        ach_reason.append("No measurable achievements")
-        ach_sug.append("Add numbers (e.g., improved by 20%)")
+        score -= 3
+        reason.append("No measurable achievements")
+        sug.append("Add numbers like 20%, 50%, etc.")
 
-    scores["Achievements"] = max(min(ach_score, 10), 3)
-    reasons["Achievements"] = ach_reason
-    suggestions["Achievements"] = ach_sug
+    scores["Achievements"] = max(min(score, 10), 3)
+    reasons["Achievements"] = reason
+    suggestions["Achievements"] = sug
 
     # SKILLS
-    skill_score = 7
-    skill_reason = []
-    skill_sug = []
+    score = 7
+    reason = []
+    sug = []
 
     if "skills" not in text_lower:
-        skill_score -= 2
-        skill_reason.append("Skills section missing")
-        skill_sug.append("Add a dedicated skills section")
+        score -= 2
+        reason.append("Skills section missing")
+        sug.append("Add a proper skills section")
 
-    scores["Skills"] = max(min(skill_score, 10), 3)
-    reasons["Skills"] = skill_reason
-    suggestions["Skills"] = skill_sug
+    scores["Skills"] = max(min(score, 10), 3)
+    reasons["Skills"] = reason
+    suggestions["Skills"] = sug
 
     # LANGUAGE
-    lang_score = 8
-    lang_reason = []
-    lang_sug = []
+    score = 8
+    reason = []
+    sug = []
 
-    weak_words = re.findall(r"\b(responsible|worked|helped|handled)\b", text_lower)
-    if len(weak_words) > 3:
-        lang_score -= 3
-        lang_reason.append("Too many weak words")
-        lang_sug.append("Replace weak words with strong action verbs")
+    weak = re.findall(r"\b(responsible|worked|helped|handled)\b", text_lower)
+    if len(weak) > 3:
+        score -= 3
+        reason.append("Too many weak words")
+        sug.append("Replace weak words with strong action verbs")
 
-    scores["Language"] = max(min(lang_score, 10), 3)
-    reasons["Language"] = lang_reason
-    suggestions["Language"] = lang_sug
+    scores["Language"] = max(min(score, 10), 3)
+    reasons["Language"] = reason
+    suggestions["Language"] = sug
 
     return scores, suggestions, reasons
 
@@ -174,17 +168,17 @@ if uploaded_file:
     total = sum(scores.values())
     percent = int((total / 50) * 100)
 
-    # ---------- SCORE ----------
+    # SCORE
     st.markdown('<div class="card">', unsafe_allow_html=True)
     st.subheader("📊 Overall Score")
     st.progress(percent)
     st.write(f"### {percent}/100")
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ---------- SECTION SCORES ----------
+    # BREAKDOWN
     st.subheader("📌 Section Breakdown")
-
     cols = st.columns(5)
+
     for i, (k, v) in enumerate(scores.items()):
         with cols[i]:
             st.markdown('<div class="card">', unsafe_allow_html=True)
@@ -193,23 +187,23 @@ if uploaded_file:
             st.write(f"{v}/10")
             st.markdown('</div>', unsafe_allow_html=True)
 
-    # ---------- DETAILED FEEDBACK ----------
+    # DETAILS
     st.markdown("## 💡 Detailed Feedback")
 
     for section in scores:
         st.markdown(f"### 🔹 {section}")
 
         if reasons[section]:
-            st.write("❌ **Why:**")
+            st.write("❌ Why:")
             for r in reasons[section]:
                 st.write(f"- {r}")
 
         if suggestions[section]:
-            st.write("💡 **Fix this:**")
+            st.write("💡 Fix:")
             for s in suggestions[section]:
                 st.code(s)
 
-    # ---------- AI IMPROVEMENTS ----------
+    # AI IMPROVEMENTS
     st.markdown("## ✨ AI Improved Sentences")
 
     for line in text.split("\n"):
