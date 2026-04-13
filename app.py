@@ -3,6 +3,8 @@ import pdfplumber
 import docx
 from openai import OpenAI
 import json
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
 st.set_page_config(layout="wide")
 
@@ -12,13 +14,26 @@ client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 st.markdown("""
 <style>
 body {background:#f4f6fb;}
-.title {text-align:center;font-size:36px;font-weight:800;}
+
+.title {
+    text-align:center;
+    font-size:38px;
+    font-weight:800;
+}
+
 .card {
     background:white;
     padding:15px;
     border-radius:12px;
     box-shadow:0 4px 12px rgba(0,0,0,0.06);
-    margin-bottom:10px;
+    height:260px;
+    overflow:auto;
+}
+
+.score-big {
+    text-align:center;
+    font-size:40px;
+    font-weight:800;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -44,106 +59,116 @@ def extract_text(file):
 # ---------- AI ANALYSIS ----------
 def analyze_resume(text):
     prompt = f"""
-Analyze this resume and return JSON ONLY.
+Analyze resume and return JSON:
 
-Give scores (0-100) for:
-Profile, Experience, Education, Skills, Achievements, Languages, Hobbies, Contact
+Sections: Profile, Experience, Education, Skills, Achievements, Languages, Hobbies, Contact
 
-Also give:
-- reasons (why score is low)
-- suggestions (how to improve)
-
-Return STRICT JSON like:
-{{
-"profile": {{"score": 80, "reasons": ["..."], "suggestions": ["..."]}},
-"experience": ...
-}}
+Each must include:
+- score (0-100)
+- reasons
+- suggestions
 
 Resume:
 {text}
 """
 
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role":"user","content":prompt}],
-            temperature=0.3
-        )
+    res = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[{"role":"user","content":prompt}],
+        temperature=0.3
+    )
 
-        return json.loads(res.choices[0].message.content)
+    return json.loads(res.choices[0].message.content)
 
-    except Exception as e:
-        st.error(e)
-        return None
-
-# ---------- ATS ----------
-def ats_analysis(text, job):
+# ---------- FINAL RESUME ----------
+def generate_final_resume(text):
     prompt = f"""
-Compare this resume with job role.
+Rewrite resume in BEST PROFESSIONAL FORMAT:
 
-Give:
-- ATS match % (0-100)
-- missing keywords
-- improvement suggestions
+- Big headings
+- Bullet points
+- Clean structure
+- Corporate tone
+- No fake data
 
 Resume:
 {text}
-
-Job:
-{job}
 """
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role":"user","content":prompt}]
-        )
-        return res.choices[0].message.content
-    except:
-        return "Error"
+
+    res = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[{"role":"user","content":prompt}]
+    )
+
+    return res.choices[0].message.content
+
+# ---------- PDF ----------
+def create_pdf(text):
+    file_path = "/mnt/data/resume.pdf"
+    doc = SimpleDocTemplate(file_path)
+    styles = getSampleStyleSheet()
+
+    story = []
+    for line in text.split("\n"):
+        story.append(Paragraph(line, styles["Normal"]))
+        story.append(Spacer(1, 10))
+
+    doc.build(story)
+    return file_path
 
 # ---------- MAIN ----------
 if file:
     text = extract_text(file)
 
-    st.write("Analyzing with AI...")
-
     data = analyze_resume(text)
 
-    if data:
+    # ---------- OVERALL SCORE ----------
+    scores = [data[s]["score"] for s in data]
+    overall = int(sum(scores)/len(scores))
 
-        st.markdown("## 📊 Section Scores")
+    st.markdown("## 📊 Overall Resume Score")
+    st.markdown(f'<div class="score-big">{overall}/100</div>', unsafe_allow_html=True)
+    st.progress(overall)
 
-        cols = st.columns(4)
-        scores = []
+    # ---------- GRID ----------
+    st.markdown("## 📌 Section Analysis")
 
-        sections = list(data.keys())
+    cols = st.columns(4)
 
-        for i, sec in enumerate(sections):
-            sec_data = data[sec]
-            score = sec_data["score"]
-            scores.append(score)
+    for i, sec in enumerate(data):
+        d = data[sec]
 
-            with cols[i % 4]:
-                st.markdown('<div class="card">', unsafe_allow_html=True)
-                st.write(f"**{sec.upper()}**")
-                st.progress(score)
-                st.write(f"{score}/100")
+        with cols[i % 4]:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
 
-                for r in sec_data["reasons"]:
-                    st.write(f"❌ {r}")
+            st.write(f"**{sec.upper()}**")
+            st.progress(d["score"])
+            st.write(f"{d['score']}/100")
 
-                for s in sec_data["suggestions"]:
-                    st.write(f"💡 {s}")
+            st.write("❌ Why:")
+            for r in d["reasons"]:
+                st.write(f"- {r}")
 
-                st.markdown('</div>', unsafe_allow_html=True)
+            st.write("💡 Fix:")
+            for s in d["suggestions"]:
+                st.write(f"- {s}")
 
-        overall = int(sum(scores)/len(scores))
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown("## 📈 Overall Score")
-        st.progress(overall)
-        st.write(f"{overall}/100")
+    # ---------- FINAL RESUME ----------
+    st.markdown("## ✨ Final Professional Resume")
 
-    # ---------- ATS ----------
-    if job_role:
-        st.markdown("## 🎯 ATS Analysis")
-        st.write(ats_analysis(text, job_role))
+    final_resume = generate_final_resume(text)
+
+    st.markdown(final_resume)
+
+    # ---------- DOWNLOAD ----------
+    pdf_path = create_pdf(final_resume)
+
+    with open(pdf_path, "rb") as f:
+        st.download_button(
+            label="📄 Download Resume as PDF",
+            data=f,
+            file_name="Professional_Resume.pdf",
+            mime="application/pdf"
+        )
