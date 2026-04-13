@@ -4,113 +4,143 @@ import docx
 import re
 from openai import OpenAI
 
-# ---------- PAGE ----------
 st.set_page_config(layout="wide")
-
-# ---------- DEBUG ----------
-st.write("API KEY LOADED:", "OPENAI_API_KEY" in st.secrets)
 
 # ---------- OPENAI ----------
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # ---------- UI ----------
-st.title("🚀 Resume Analyzer Pro (AI Powered)")
-st.write("Upload resume and get smart improvements")
+st.markdown("""
+<style>
+body {background:#f5f7fb;}
+.title {text-align:center;font-size:34px;font-weight:700;}
+.subtitle {text-align:center;color:#6b7280;margin-bottom:20px;}
+.card {
+    background:white;
+    padding:20px;
+    border-radius:12px;
+    box-shadow:0 4px 12px rgba(0,0,0,0.05);
+    margin-bottom:15px;
+}
+.section {font-size:22px;font-weight:600;margin-top:20px;}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="title">🚀 Resume Analyzer Pro</div>', unsafe_allow_html=True)
+st.markdown('<div class="subtitle">AI-powered professional resume upgrade</div>', unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader("Upload Resume", type=["pdf", "docx"])
 
-# ---------- TEXT EXTRACTION ----------
+# ---------- EXTRACT TEXT ----------
 def extract_text(file):
     text = ""
     if file.type == "application/pdf":
         with pdfplumber.open(file) as pdf:
-            for page in pdf.pages:
-                text += page.extract_text() or ""
+            for p in pdf.pages:
+                text += p.extract_text() or ""
     else:
         doc = docx.Document(file)
         for para in doc.paragraphs:
             text += para.text + "\n"
     return text
 
-# ---------- AI FUNCTION ----------
-def ai_improve_line(line):
+# ---------- SPLIT SECTIONS ----------
+def split_sections(text):
+    sections = {
+        "Education": "",
+        "Experience": "",
+        "Skills": "",
+        "Other": ""
+    }
+
+    current = "Other"
+    for line in text.split("\n"):
+        l = line.lower()
+
+        if "education" in l:
+            current = "Education"
+        elif "experience" in l:
+            current = "Experience"
+        elif "skills" in l:
+            current = "Skills"
+
+        sections[current] += line + "\n"
+
+    return sections
+
+# ---------- AI REWRITE ----------
+def rewrite_section(section_text, section_name):
     try:
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
             messages=[
-                {"role": "system", "content": "Rewrite this resume sentence professionally using strong action verbs."},
-                {"role": "user", "content": line}
+                {
+                    "role": "system",
+                    "content": f"You are a top-tier resume writer. Rewrite the {section_name} section professionally with strong action verbs, clear bullet points, and corporate tone. Keep it realistic and not fake."
+                },
+                {
+                    "role": "user",
+                    "content": section_text
+                }
             ],
-            temperature=0.7
+            temperature=0.6
         )
+
         return response.choices[0].message.content.strip()
 
     except Exception as e:
-        st.error(f"AI Error: {e}")  # 👈 shows error
-        return None
+        return f"Error: {e}"
 
-# ---------- ANALYSIS ----------
-def analyze(text):
-    text_lower = text.lower()
-
-    scores = {}
-    suggestions = {}
-    reasons = {}
-
-    # EXPERIENCE ONLY (simple for now)
-    score = 7
-    reason = []
-    sug = []
-
-    if not re.search(r"\b(managed|led|developed)\b", text_lower):
-        score -= 2
-        reason.append("Weak action words used")
-        sug.append("Use strong verbs like managed, led, developed")
-
-    scores["Experience"] = score
-    reasons["Experience"] = reason
-    suggestions["Experience"] = sug
-
-    return scores, suggestions, reasons
+# ---------- SCORING ----------
+def score_section(text):
+    score = 6
+    if re.search(r"\d+%|\d+", text):
+        score += 2
+    if re.search(r"\b(managed|led|developed)\b", text.lower()):
+        score += 2
+    return min(score, 10)
 
 # ---------- MAIN ----------
 if uploaded_file:
     text = extract_text(uploaded_file)
+    sections = split_sections(text)
 
-    scores, suggestions, reasons = analyze(text)
+    # ---------- SCORES ----------
+    st.markdown("## 📊 Resume Score")
 
-    st.subheader("📊 Score")
-    for k, v in scores.items():
-        st.write(f"{k}: {v}/10")
+    cols = st.columns(4)
+    scores = {}
 
-    st.subheader("💡 Feedback")
-    for k in scores:
-        if reasons[k]:
-            st.write("❌ Why:")
-            for r in reasons[k]:
-                st.write(f"- {r}")
+    for i, (sec, content) in enumerate(sections.items()):
+        s = score_section(content)
+        scores[sec] = s
 
-        if suggestions[k]:
-            st.write("💡 Fix:")
-            for s in suggestions[k]:
-                st.code(s)
+        with cols[i]:
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.write(f"**{sec}**")
+            st.progress(s * 10)
+            st.write(f"{s}/10")
+            st.markdown('</div>', unsafe_allow_html=True)
 
-    # ---------- AI OUTPUT ----------
-    st.subheader("✨ AI Improved Sentences")
+    total = int(sum(scores.values()) / len(scores) * 10)
+    st.success(f"Overall Score: {total}/100")
 
-    found = False
+    # ---------- AI IMPROVED SECTIONS ----------
+    st.markdown("## ✨ AI Professional Resume Upgrade")
 
-    for line in text.split("\n"):
-        if len(line.strip()) > 20:
-            improved = ai_improve_line(line)
+    for sec, content in sections.items():
+        if len(content.strip()) > 30:
 
-            if improved:
-                found = True
-                st.write("**Original:**")
-                st.code(line)
+            st.markdown(f"### 🔹 {sec}")
 
-                st.write("**Improved:**")
+            improved = rewrite_section(content, sec)
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.write("**Original**")
+                st.code(content)
+
+            with col2:
+                st.write("**Improved (Professional)**")
                 st.code(improved)
-
-    if not found:
-        st.warning("No AI output generated — check API or text")
